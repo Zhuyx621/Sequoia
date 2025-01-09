@@ -18,7 +18,7 @@ def check(code_name, data, end_date=None, threshold=60):
     if data.empty:
         return False
     p_change = data.iloc[-1]['p_change']
-    if p_change > -9.5:
+    if p_change > -7:
         return False
 
     data = data.tail(n=threshold + 1)
@@ -33,8 +33,8 @@ def check(code_name, data, end_date=None, threshold=60):
 
     amount = last_close * last_vol * 100
 
-    # 成交额不低于2亿
-    if amount < 200000000:
+    # 成交额不低于1亿
+    if amount < 100000000:
         return False
 
     data = data.head(n=threshold)
@@ -42,7 +42,7 @@ def check(code_name, data, end_date=None, threshold=60):
     mean_vol = data.iloc[-1]['vol_ma5']
 
     vol_ratio = last_vol / mean_vol
-    if vol_ratio >= 4:
+    if vol_ratio >= 2:
         msg = "*{0}\n量比：{1:.2f}\t跌幅：{2}%\n".format(code_name, vol_ratio, p_change)
         logging.debug(msg)
         return True
