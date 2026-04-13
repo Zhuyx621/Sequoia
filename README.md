@@ -35,7 +35,7 @@ performance, maintainability, and extensibility.
 ### 1. 安装依赖 | Install Dependencies
 
 ```bash
-pip install akshare "pydantic-settings>=2.0" "rich>=13.0" "pandas>=2.0" "requests>=2.31"
+pip install baostock "pydantic-settings>=2.0" "rich>=13.0" "pandas>=2.0" "requests>=2.31"
 ```
 
 ### 2. 配置环境变量 | Configure Environment
@@ -80,7 +80,7 @@ sequoia-x-v2/
     │   └── logger.py          # 日志工厂 / Logger factory (rich)
     ├── data/
     │   ├── __init__.py
-    │   └── engine.py          # 数据引擎 / Data engine (akshare + SQLite)
+    │   └── engine.py          # 数据引擎 / Data engine (baostock + SQLite)
     ├── strategy/
     │   ├── __init__.py
     │   ├── base.py            # 策略抽象基类 / Abstract base strategy

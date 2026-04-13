@@ -2,11 +2,15 @@
 
 import json
 from datetime import date
+from typing import TYPE_CHECKING
 
 import requests
 
 from sequoia_x.core.config import Settings
 from sequoia_x.core.logger import get_logger
+
+if TYPE_CHECKING:
+    from sequoia_x.data.engine import PriceChangeStat
 
 logger = get_logger(__name__)
 
@@ -52,7 +56,12 @@ class FeishuNotifier:
             logger.warning(f"获取雪球映射失败，将使用默认格式：{exc}")
             return {}
 
-    def _build_card(self, symbols: list[str], strategy_name: str) -> dict:
+    def _build_card(
+        self,
+        symbols: list[str],
+        strategy_name: str,
+        price_stats: list["PriceChangeStat"] | None = None,
+    ) -> dict:
         """
         构造飞书卡片消息 JSON，选股结果以雪球超链接横排展示。
 
@@ -65,13 +74,15 @@ class FeishuNotifier:
         """
         today = date.today().strftime("%Y-%m-%d")
         xq_map = self._get_xueqiu_mapping()
+        stats_by_symbol = {item.symbol: item for item in (price_stats or [])}
 
         links: list[str] = []
         for code in symbols:
+            stat = stats_by_symbol.get(code)
             info = xq_map.get(code)
             if info:
                 prefix_code = info["prefix_code"]
-                name = info["name"]
+                name = stat.name if stat is not None and stat.name != "未知" else info["name"]
             else:
                 # fallback：按首位数字判断交易所前缀
                 if code.startswith("6"):
@@ -80,10 +91,26 @@ class FeishuNotifier:
                     prefix_code = f"BJ{code}"
                 else:
                     prefix_code = f"SZ{code}"
-                name = "未知"
+                name = stat.name if stat is not None else "未知"
             links.append(f"[{name}](https://xueqiu.com/S/{prefix_code})")
 
         symbol_text = " ".join(links) if links else "（无选股结果）"
+        if price_stats:
+            up_count = sum(1 for item in price_stats if item.pct_change > 0)
+            down_count = sum(1 for item in price_stats if item.pct_change < 0)
+            flat_count = len(price_stats) - up_count - down_count
+            stat_summary = f"**涨跌统计：** 上涨 {up_count} | 下跌 {down_count} | 持平 {flat_count}"
+            stat_lines = [
+                (
+                    f"- {item.symbol} {item.name} | {item.direction} {item.pct_change:+.2f}% | "
+                    f"{item.prev_close:.2f}->{item.latest_close:.2f}"
+                )
+                for item in price_stats
+            ]
+            stat_detail = "\n".join(stat_lines)
+        else:
+            stat_summary = "**涨跌统计：** 暂无可用数据"
+            stat_detail = "（暂无涨跌统计）"
 
         return {
             "msg_type": "interactive",
@@ -100,7 +127,10 @@ class FeishuNotifier:
                         "tag": "div",
                         "text": {
                             "tag": "lark_md",
-                            "content": f"**日期：** {today}\n**策略：** {strategy_name}\n**选股数量：** {len(symbols)}",
+                            "content": (
+                                f"**日期：** {today}\n**策略：** {strategy_name}\n"
+                                f"**选股数量：** {len(symbols)}\n{stat_summary}"
+                            ),
                         },
                     },
                     {"tag": "hr"},
@@ -109,6 +139,14 @@ class FeishuNotifier:
                         "text": {
                             "tag": "lark_md",
                             "content": f"**选股列表：**\n{symbol_text}",
+                        },
+                    },
+                    {"tag": "hr"},
+                    {
+                        "tag": "div",
+                        "text": {
+                            "tag": "lark_md",
+                            "content": f"**相对上个交易日表现：**\n{stat_detail}",
                         },
                     },
                 ],
@@ -120,6 +158,7 @@ class FeishuNotifier:
         symbols: list[str],
         strategy_name: str,
         webhook_key: str = "default",
+        price_stats: list["PriceChangeStat"] | None = None,
     ) -> None:
         """
         将选股结果格式化为飞书卡片消息并 POST 至对应 Webhook。
@@ -131,12 +170,13 @@ class FeishuNotifier:
             symbols: 选股结果代码列表。
             strategy_name: 策略名称，用于卡片标题。
             webhook_key: 策略标识，用于路由到对应飞书机器人。
+            price_stats: 推荐股票相对上一个交易日的涨跌统计。
 
         Raises:
             不抛出异常，HTTP 失败时记录 ERROR 日志。
         """
         url = self.settings.get_webhook_url(webhook_key)
-        payload = self._build_card(symbols, strategy_name)
+        payload = self._build_card(symbols, strategy_name, price_stats=price_stats)
 
         try:
             resp = requests.post(
